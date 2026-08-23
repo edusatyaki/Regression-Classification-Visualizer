@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ML Algorithms — Interactive Visualizer</title>
+<style>
+  :root{
+    --bg:#eef1f5; --bg2:#ffffff; --panel:#ffffff; --panel2:#f3f4f6;
+    --ink:#111827; --muted:#6b7280;
+    --line:#e5e7eb; --accent:#2563eb; --accent2:#2563eb;
+    --reg:#2563eb; --cls:#db2777; --good:#16a34a; --warn:#d97706; --bad:#dc2626;
+    --a:#2563eb; --b:#f59e0b; --shadow:0 10px 34px rgba(16,24,40,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:linear-gradient(180deg,#f8fafc,#eceff4);
+    color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  /* ---------- Deck / slide framing (16:9 landscape) ---------- */
+  #deck{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  .stage{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
+  .slide{
+    position:absolute;
+    width:min(96vw, calc(96vh * 16 / 9));
+    height:min(96vh, calc(96vw * 9 / 16));
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:18px;
+    box-shadow:var(--shadow);
+    padding:3.2vh 3.4vw;
+    opacity:0;transform:translateX(40px) scale(.98);
+    transition:opacity .38s ease, transform .38s ease;
+    pointer-events:none;overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+  .slide.active{opacity:1;transform:none;pointer-events:auto;z-index:2}
+  .slide.prev{transform:translateX(-40px) scale(.98)}
+
+  /* ---------- Header bits ---------- */
+  .kicker{font-size:1.05vw;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:1vh;display:flex;gap:.7vw;align-items:center}
+  .dot{width:.7vw;height:.7vw;border-radius:50%;display:inline-block}
+  .dot.reg{background:var(--reg)} .dot.cls{background:var(--cls)}
+  h1{font-size:3.1vw;margin:0 0 1vh;line-height:1.05;font-weight:800;color:var(--ink)}
+  h2{font-size:2.35vw;margin:0 0 1.2vh;line-height:1.08;font-weight:800;color:var(--ink)}
+  .sub{color:var(--muted);font-size:1.25vw;margin:0 0 1.6vh;max-width:60ch}
+  .lead{font-size:1.35vw;color:var(--ink);max-width:70ch;line-height:1.5}
+
+  /* ---------- Layout: text + viz ---------- */
+  .cols{display:grid;grid-template-columns:38% 62%;gap:2vw;flex:1;min-height:0}
+  .left{display:flex;flex-direction:column;min-height:0;overflow:auto}
+  .right{display:grid;grid-template-rows:1fr;min-height:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.4vh 1.2vw;margin-bottom:1.2vh;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .card h3{margin:0 0 .5vh;font-size:1.15vw;color:var(--accent);font-weight:700}
+  .card p{margin:.2vh 0;font-size:1.02vw;color:var(--muted);line-height:1.45}
+  ul.feat{margin:.4vh 0 0;padding-left:1.2vw}
+  ul.feat li{font-size:1.02vw;color:var(--muted);margin:.45vh 0;line-height:1.4}
+  ul.feat li b{color:var(--ink);font-weight:600}
+  .pill{display:inline-flex;gap:.4vw;align-items:center;font-size:.95vw;padding:.4vh .8vw;border-radius:999px;font-weight:700}
+  .pill.reg{background:rgba(37,99,235,.10);color:#1d4ed8;border:1px solid rgba(37,99,235,.30)}
+  .pill.cls{background:rgba(219,39,119,.10);color:#be185d;border:1px solid rgba(219,39,119,.30)}
+  .pill.good{background:rgba(22,163,74,.10);color:#15803d;border:1px solid rgba(22,163,74,.30)}
+
+  /* ---------- Viz panel ---------- */
+  .viz{background:var(--panel);border:1px solid var(--line);border-radius:14px;display:grid;grid-template-rows:auto 1fr auto;min-height:0;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .viz-head{display:flex;justify-content:space-between;align-items:center;padding:.9vh 1vw;border-bottom:1px solid var(--line);flex-wrap:wrap;gap:.6vw;background:var(--panel2)}
+  .viz-title{font-size:1.02vw;font-weight:700;color:var(--ink)}
+  .viz-stats{font-size:.95vw;color:var(--muted);font-variant-numeric:tabular-nums}
+  .viz-stats b{color:var(--accent)}
+  .canvas-wrap{position:relative;min-height:0;overflow:hidden;background:#fff}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  .controls{display:flex;align-items:center;gap:1vw;padding:1vh 1vw;border-top:1px solid var(--line);flex-wrap:wrap;background:var(--panel2)}
+  .ctrl{display:flex;flex-direction:column;gap:.3vh;min-width:9vw}
+  .ctrl label{font-size:.82vw;color:var(--muted);display:flex;justify-content:space-between;gap:.5vw}
+  .ctrl label b{color:var(--accent);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .btn{background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:.55vh .9vw;font-size:.9vw;cursor:pointer;font-weight:600;box-shadow:0 1px 1px rgba(16,24,40,.04)}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  select{background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:.45vh .6vw;font-size:.9vw}
+
+  /* ---------- Title / overview slides ---------- */
+  .center{align-items:center;justify-content:center;text-align:center}
+  .center h1{font-size:4.2vw}
+  .badge-row{display:flex;gap:1vw;flex-wrap:wrap;justify-content:center;margin-top:2vh}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.6vw;flex:1;min-height:0}
+  .bigcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:2vh 1.6vw;display:flex;flex-direction:column;box-shadow:0 2px 6px rgba(16,24,40,.05)}
+  .bigcard.reg{border-top:4px solid var(--reg)} .bigcard.cls{border-top:4px solid var(--cls)}
+  .bigcard h2{font-size:1.9vw}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:.4vh 1vw;font-size:1.02vw;margin-top:.6vh}
+  .kv .k{color:var(--accent);font-weight:700;white-space:nowrap}
+  .kv .v{color:var(--muted)}
+
+  /* ---------- metric / evaluation slides ---------- */
+  .metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.1vw;flex:1;min-height:0;overflow:auto;align-content:start;margin-top:.6vh}
+  .card.metric{margin:0}
+  .card.metric h3{color:var(--accent);font-size:1.12vw;margin:0 0 .3vh}
+  .formula{font-family:"SFMono-Regular",Menlo,Consolas,monospace;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:.55vh .7vw;color:#1d4ed8;font-size:1.0vw;margin:.5vh 0;overflow-x:auto;white-space:nowrap}
+  table.cm{border-collapse:separate;border-spacing:6px;width:100%;font-size:1.0vw;margin-top:1vh}
+  table.cm td{padding:1.2vh .6vw;text-align:center;border-radius:8px;font-weight:700}
+  table.cm td.hdr{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+  table.cm td.tp,table.cm td.tn{background:#dcfce7;color:#15803d}
+  table.cm td.fp,table.cm td.fn{background:#fee2e2;color:#b91c1c}
+
+  /* ---------- author credit footer ---------- */
+  #credit{position:fixed;bottom:1.4vh;left:1.6vw;z-index:50;font-size:.82vw;color:var(--muted);
+          background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:8px;padding:.45vh .85vw;line-height:1.25;backdrop-filter:blur(6px)}
+  #credit b{color:var(--accent);font-weight:700}
+
+  /* ---------- Chrome: nav + progress ---------- */
+  #progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--accent),#60a5fa);z-index:50;transition:width .3s ease}
+  #nav{position:fixed;bottom:2.2vh;left:50%;transform:translateX(-50%);display:flex;gap:.8vw;align-items:center;z-index:50;
+       background:rgba(255,255,255,.9);border:1px solid var(--line);backdrop-filter:blur(8px);border-radius:999px;padding:.6vh 1vw;box-shadow:var(--shadow)}
+  #nav button{width:2.4vw;height:2.4vw;min-width:34px;min-height:34px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:1.1vw;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  #nav button:hover{border-color:var(--accent);color:var(--accent)}
+  #counter{font-size:.95vw;color:var(--muted);min-width:5vw;text-align:center;font-variant-numeric:tabular-nums}
+  #dots{position:fixed;bottom:6.2vh;left:50%;transform:translateX(-50%);display:flex;gap:.45vw;z-index:50;max-width:80vw;flex-wrap:wrap;justify-content:center}
+  #dots i{width:.55vw;height:.55vw;min-width:7px;min-height:7px;border-radius:50%;background:#cbd5e1;cursor:pointer;transition:.2s}
+  #dots i.on{background:var(--accent);transform:scale(1.3)}
+  .help{position:fixed;top:1.4vh;right:1.6vw;font-size:.9vw;color:var(--muted);z-index:50;background:rgba(255,255,255,.8);border:1px solid var(--line);border-radius:8px;padding:.4vh .8vw}
+  kbd{background:#fff;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 .4vw;font-size:.82vw;color:var(--ink)}
+  .legend{display:flex;gap:1vw;font-size:.85vw;color:var(--muted);align-items:center}
+  .legend i{width:.8vw;height:.8vw;border-radius:3px;display:inline-block;margin-right:.3vw;vertical-align:middle}
+  .foot{position:absolute;bottom:1.4vh;left:3.4vw;font-size:.82vw;color:#9ca3af;letter-spacing:.05em}
+  @media (max-width:560px){
+    .cols{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+    .left{max-height:30%}
+  }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div class="help">Use <kbd>◀</kbd> <kbd>▶</kbd> arrows &nbsp;·&nbsp; <kbd>F</kbd> fullscreen</div>
+<div id="deck"><div class="stage" id="stage"></div></div>
+<div id="dots"></div>
+<div id="nav">
+  <button id="prev" aria-label="Previous">‹</button>
+  <span id="counter">1 / 19</span>
+  <button id="next" aria-label="Next">›</button>
+</div>
+<div id="credit"><b>Satyaki Das</b> · Educator · M.Tech, Jadavpur University</div>
+
+<script>
+/* =========================================================================
+   ML Interactive Visualizer  —  vanilla JS, self-contained (light theme)
+   ========================================================================= */
+"use strict";
+
+/* ---------------- palette (canvas) ---------------- */
+const CLR={ a:'#2563eb', b:'#f59e0b', fit:'#16a34a', resid:'rgba(220,38,38,.30)',
+  grid:'rgba(30,41,59,.10)', tick:'#64748b', dotEdge:'rgba(0,0,0,.18)',
+  fillA:'rgba(37,99,235,', fillB:'rgba(245,158,11,' };
+
+/* ---------------- tiny math helpers ---------------- */
+const rnd = (() => { let s = 123456789; return () => { s = (s*1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; })();
+function gauss(){ let u=0,v=0; while(!u)u=rnd(); while(!v)v=rnd(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+const mean = a => a.reduce((s,x)=>s+x,0)/a.length;
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+
+// Solve linear system A x = b (Gauss-Jordan w/ partial pivot).
+function solve(A,b){
+  const n=b.length, M=A.map((r,i)=>[...r,b[i]]);
+  for(let c=0;c<n;c++){
+    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    [M[c],M[p]]=[M[p],M[c]];
+    if(Math.abs(M[c][c])<1e-12) M[c][c]=1e-12;
+    for(let r=0;r<n;r++){ if(r===c)continue; const f=M[r][c]/M[c][c]; for(let k=c;k<=n;k++) M[r][k]-=f*M[c][k]; }
+  }
+  return M.map((r,i)=>r[n]/r[i]);
+}
+function polyfit(xs, ys, deg, lambda=0){
+  const n=deg+1; const A=Array.from({length:n},()=>new Array(n).fill(0)); const b=new Array(n).fill(0);
+  for(let i=0;i<xs.length;i++){
+    const pw=[]; let p=1; for(let k=0;k<2*deg+1;k++){pw.push(p);p*=xs[i];}
+    for(let r=0;r<n;r++){ b[r]+=pw[r]*ys[i]; for(let c=0;c<n;c++) A[r][c]+=pw[r+c]; }
+  }
+  for(let k=0;k<n;k++) A[k][k]+=lambda;
+  return solve(A,b);
+}
+const polyval=(c,x)=>{ let y=0,p=1; for(const k of c){y+=k*p;p*=x;} return y; };
+
+/* ---------------- 1-D regression decision tree ---------------- */
+function buildTree1D(xs, ys, depth, minLeaf=2){
+  const node={}; const m=mean(ys);
+  if(depth<=0 || xs.length<=minLeaf){ node.leaf=true; node.val=m; return node; }
+  const idx=xs.map((x,i)=>i).sort((a,b)=>xs[a]-xs[b]);
+  let best=null;
+  for(let s=minLeaf; s<=xs.length-minLeaf; s++){
+    const L=idx.slice(0,s), R=idx.slice(s);
+    const yl=L.map(i=>ys[i]), yr=R.map(i=>ys[i]);
+    const ml=mean(yl), mr=mean(yr);
+    let sse=0; for(const v of yl)sse+=(v-ml)**2; for(const v of yr)sse+=(v-mr)**2;
+    const thr=(xs[idx[s-1]]+xs[idx[s]])/2;
+    if(!best||sse<best.sse) best={sse,thr,L,R};
+  }
+  if(!best){ node.leaf=true; node.val=m; return node; }
+  node.leaf=false; node.thr=best.thr;
+  node.left =buildTree1D(best.L.map(i=>xs[i]),best.L.map(i=>ys[i]),depth-1,minLeaf);
+  node.right=buildTree1D(best.R.map(i=>xs[i]),best.R.map(i=>ys[i]),depth-1,minLeaf);
+  return node;
+}
+function predTree1D(node,x){ while(!node.leaf) node = x<node.thr?node.left:node.right; return node.val; }
+
+/* ---------------- 2-D classification tree (Gini) ---------------- */
+function gini(labels){ const c={}; for(const l of labels)c[l]=(c[l]||0)+1; let g=1; for(const k in c) g-=(c[k]/labels.length)**2; return g; }
+function majority(labels){ const c={}; for(const l of labels)c[l]=(c[l]||0)+1; return +Object.keys(c).reduce((a,b)=>c[a]>c[b]?a:b); }
+function buildTree2D(pts, depth, minLeaf=3){
+  const labels=pts.map(p=>p.c); const node={};
+  if(depth<=0 || pts.length<=minLeaf || gini(labels)<1e-6){ node.leaf=true; node.cls=majority(labels); return node; }
+  let best=null;
+  for(let dim=0;dim<2;dim++){
+    const key=dim===0?'x':'y';
+    const sorted=[...pts].sort((a,b)=>a[key]-b[key]);
+    for(let s=minLeaf;s<=pts.length-minLeaf;s++){
+      const L=sorted.slice(0,s), R=sorted.slice(s);
+      const g=(L.length*gini(L.map(p=>p.c))+R.length*gini(R.map(p=>p.c)))/pts.length;
+      const thr=(sorted[s-1][key]+sorted[s][key])/2;
+      if(!best||g<best.g) best={g,dim,thr,L,R};
+    }
+  }
+  if(!best){ node.leaf=true; node.cls=majority(labels); return node; }
+  node.leaf=false; node.dim=best.dim; node.thr=best.thr;
+  node.left=buildTree2D(best.L,depth-1,minLeaf); node.right=buildTree2D(best.R,depth-1,minLeaf);
+  return node;
+}
+function predTree2D(node,x,y){ while(!node.leaf){ const v=node.dim===0?x:y; node=v<node.thr?node.left:node.right; } return node.cls; }
+
+/* =========================================================================
+   Canvas plotting utility
+   ========================================================================= */
+class Plot{
+  constructor(canvas, xr=[0,10], yr=[0,10]){ this.c=canvas; this.ctx=canvas.getContext('2d'); this.xr=xr; this.yr=yr; this.resize(); }
+  resize(){
+    const r=this.c.getBoundingClientRect(); const dpr=window.devicePixelRatio||1;
+    this.w=Math.max(2,r.width); this.h=Math.max(2,r.height);
+    this.c.width=this.w*dpr; this.c.height=this.h*dpr;
+    this.ctx.setTransform(dpr,0,0,dpr,0,0);
+    this.pad={l:34,r:12,t:12,b:26};
+  }
+  px(x){ return this.pad.l + (x-this.xr[0])/(this.xr[1]-this.xr[0])*(this.w-this.pad.l-this.pad.r); }
+  py(y){ return this.h-this.pad.b - (y-this.yr[0])/(this.yr[1]-this.yr[0])*(this.h-this.pad.t-this.pad.b); }
+  ix(px){ return this.xr[0]+(px-this.pad.l)/(this.w-this.pad.l-this.pad.r)*(this.xr[1]-this.xr[0]); }
+  iy(py){ return this.yr[0]+(this.h-this.pad.b-py)/(this.h-this.pad.t-this.pad.b)*(this.yr[1]-this.yr[0]); }
+  clear(){ this.ctx.clearRect(0,0,this.w,this.h); }
+  grid(){
+    const g=this.ctx; g.save(); g.strokeStyle=CLR.grid; g.lineWidth=1; g.fillStyle=CLR.tick; g.font='10px system-ui';
+    for(let i=0;i<=5;i++){
+      const x=this.xr[0]+(this.xr[1]-this.xr[0])*i/5;
+      g.beginPath(); g.moveTo(this.px(x),this.pad.t); g.lineTo(this.px(x),this.h-this.pad.b); g.stroke();
+      g.fillText(x.toFixed(0), this.px(x)-4, this.h-this.pad.b+13);
+      const y=this.yr[0]+(this.yr[1]-this.yr[0])*i/5;
+      g.beginPath(); g.moveTo(this.pad.l,this.py(y)); g.lineTo(this.w-this.pad.r,this.py(y)); g.stroke();
+      g.fillText(y.toFixed(0), 6, this.py(y)+3);
+    }
+    g.restore();
+  }
+  dot(x,y,color,r=4){ const g=this.ctx; g.beginPath(); g.arc(this.px(x),this.py(y),r,0,7); g.fillStyle=color; g.fill(); g.strokeStyle=CLR.dotEdge; g.lineWidth=1; g.stroke(); }
+  line(fn, color, w=2.5, samples=220){
+    const g=this.ctx; g.save(); g.strokeStyle=color; g.lineWidth=w; g.lineJoin='round'; g.beginPath();
+    let started=false;
+    for(let i=0;i<=samples;i++){
+      const x=this.xr[0]+(this.xr[1]-this.xr[0])*i/samples; const y=fn(x);
+      if(!isFinite(y)){started=false;continue;}
+      const py=clamp(this.py(y),-50,this.h+50);
+      if(!started){g.moveTo(this.px(x),py);started=true;} else g.lineTo(this.px(x),py);
+    }
+    g.stroke(); g.restore();
+  }
+  band(fnLo,fnHi,color,samples=120){
+    const g=this.ctx; g.save(); g.fillStyle=color; g.beginPath();
+    for(let i=0;i<=samples;i++){ const x=this.xr[0]+(this.xr[1]-this.xr[0])*i/samples; g.lineTo(this.px(x),this.py(fnHi(x))); }
+    for(let i=samples;i>=0;i--){ const x=this.xr[0]+(this.xr[1]-this.xr[0])*i/samples; g.lineTo(this.px(x),this.py(fnLo(x))); }
+    g.closePath(); g.fill(); g.restore();
+  }
+}
+
+/* =========================================================================
+   Metrics: HOW WE MEASURE IT
+   ========================================================================= */
+// Regression -----------------------------------------------------------
+function regMetrics(xs,ys,f){
+  const my=mean(ys); let ssr=0,sst=0,mae=0;
+  for(let i=0;i<xs.length;i++){ const e=ys[i]-f(xs[i]); ssr+=e*e; sst+=(ys[i]-my)**2; mae+=Math.abs(e); }
+  return {mse:ssr/xs.length, rmse:Math.sqrt(ssr/xs.length), mae:mae/xs.length, r2:1-ssr/(sst||1e-9)};
+}
+function drawResiduals(P,xs,ys,f){
+  const g=P.ctx; g.save(); g.strokeStyle=CLR.resid; g.setLineDash([3,3]); g.lineWidth=1;
+  for(let i=0;i<xs.length;i++){ g.beginPath(); g.moveTo(P.px(xs[i]),P.py(ys[i])); g.lineTo(P.px(xs[i]),P.py(f(xs[i]))); g.stroke(); }
+  g.restore();
+}
+function regStat(id,xs,ys,f,pre){
+  const m=regMetrics(xs,ys,f);
+  setStat(id,`${pre?pre+' · ':''}MSE <b>${m.mse.toFixed(2)}</b> · RMSE <b>${m.rmse.toFixed(2)}</b> · MAE <b>${m.mae.toFixed(2)}</b> · R² <b>${m.r2.toFixed(3)}</b>`);
+}
+// Classification --------------------------------------------------------
+// positive class = 1 (orange). Confusion counts computed live from training points.
+function confusion(pts, hard){
+  let TP=0,FP=0,FN=0,TN=0;
+  for(const p of pts){ const pr=hard(p.x,p.y);
+    if(p.c===1){ pr===1?TP++:FN++; } else { pr===1?FP++:TN++; } }
+  const n=pts.length, prec=TP/(TP+FP||1), rec=TP/(TP+FN||1);
+  return {TP,FP,FN,TN, acc:(TP+TN)/n, prec, rec, f1:2*prec*rec/((prec+rec)||1), spec:TN/(TN+FP||1)};
+}
+function metricStat(id,pre,m){
+  setStat(id,`${pre?pre+' · ':''}Acc <b>${(m.acc*100).toFixed(0)}%</b> · P <b>${(m.prec*100).toFixed(0)}%</b> · R <b>${(m.rec*100).toFixed(0)}%</b> · F1 <b>${(m.f1*100).toFixed(0)}%</b> · Spec <b>${(m.spec*100).toFixed(0)}%</b>`);
+}
+
+/* =========================================================================
+   Data generators
+   ========================================================================= */
+function genRegression(kind='linear', n=26){
+  const xs=[],ys=[];
+  for(let i=0;i<n;i++){
+    const x=rnd()*10; let y;
+    if(kind==='linear') y = 1.1*x + 1.3 + gauss()*0.9;
+    else if(kind==='wave') y = 4 + 3*Math.sin(x*0.9) + gauss()*0.7 + x*0.15;
+    else y = 1.1*x + 1.3 + gauss()*0.9;
+    xs.push(x); ys.push(clamp(y,-1,11));
+  }
+  return {xs,ys};
+}
+function genClusters(n=90, sep=1.0){
+  const pts=[]; const centers=[[3.3,3.3],[6.8,6.8]];
+  for(let i=0;i<n;i++){ const c=i%2; const cx=centers[c][0], cy=centers[c][1];
+    pts.push({x:clamp(cx+gauss()*1.35*sep,0.2,9.8), y:clamp(cy+gauss()*1.35*sep,0.2,9.8), c}); }
+  return pts;
+}
+function genMoons(n=100){
+  const pts=[];
+  for(let i=0;i<n;i++){ const c=i%2; const t=rnd()*Math.PI; let x,y;
+    if(c===0){ x=5+3*Math.cos(t); y=4.2+3*Math.sin(t); } else { x=3.4+3*Math.cos(t); y=6.0-3*Math.sin(t); }
+    pts.push({x:clamp(x+gauss()*0.45,0.2,9.8), y:clamp(y+gauss()*0.45,0.2,9.8), c}); }
+  return pts;
+}
+
+/* =========================================================================
+   Grid shading for 2-D classifiers
+   ========================================================================= */
+function shade(plot, predict, res=52){
+  const g=plot.ctx; const W=plot.w-plot.pad.l-plot.pad.r, H=plot.h-plot.pad.t-plot.pad.b;
+  const cw=W/res, ch=H/res;
+  for(let i=0;i<res;i++)for(let j=0;j<res;j++){
+    const x=plot.ix(plot.pad.l+(i+0.5)*cw), y=plot.iy(plot.pad.t+(j+0.5)*ch);
+    const p=predict(x,y); const a=Math.abs(p-0.5)*2;
+    g.fillStyle = p<0.5 ? CLR.fillA+(0.07+0.28*a)+')' : CLR.fillB+(0.07+0.28*a)+')';
+    g.fillRect(plot.pad.l+i*cw, plot.pad.t+j*ch, cw+1, ch+1);
+  }
+}
+function drawPoints(plot, pts){ for(const p of pts) plot.dot(p.x,p.y, p.c===0?CLR.a:CLR.b, 4.5); }
+
+/* =========================================================================
+   SLIDE DEFINITIONS
+   ========================================================================= */
+const SLIDES = [];
+
+SLIDES.push({html:`
+  <div class="slide center">
+    <div class="kicker" style="justify-content:center"><span class="dot reg"></span><span class="dot cls"></span> Machine Learning · Interactive</div>
+    <h1>Regression &amp; Classification<br><span style="color:var(--accent)">A Visual, Hands-On Tour</span></h1>
+    <p class="lead" style="text-align:center;margin:1.4vh auto 0">Every algorithm below is <b>live</b> — drag the sliders, click the canvas to add data,
+    and watch both the model <b>and its evaluation metric</b> update in real time.</p>
+    <div class="badge-row">
+      <span class="pill reg">7 Regression algorithms</span>
+      <span class="pill cls">6 Classification algorithms</span>
+      <span class="pill good">measured live · error &amp; confusion matrix</span>
+    </div>
+    <p class="lead" style="text-align:center;margin-top:2.4vh">Created by <b style="color:var(--accent)">Satyaki Das</b> — Educator · M.Tech, Jadavpur University</p>
+    <p class="sub" style="text-align:center;margin-top:1vh">Navigate with <kbd>◀</kbd> <kbd>▶</kbd> arrow keys · Press <kbd>F</kbd> for fullscreen</p>
+  </div>`});
+
+SLIDES.push({html:`
+  <div class="slide">
+    <div class="kicker"><span class="dot reg"></span> Concept 01</div>
+    <h1 style="color:#1d4ed8">Regression</h1>
+    <div class="grid2" style="margin-top:1vh">
+      <div class="bigcard reg">
+        <h3 style="color:#1d4ed8;font-size:1.2vw;margin:0 0 .6vh">Definition</h3>
+        <p class="lead">Regression predicts a <b>continuous numeric value</b> — a quantity on a scale.
+        The model learns a function <b>f(x)</b> mapping inputs to a real-valued output, then minimizes the gap
+        between predictions and true values.</p>
+        <div class="kv">
+          <span class="k">Output</span><span class="v">Continuous number (e.g. 42.7)</span>
+          <span class="k">Measured by</span><span class="v">RMSE · MAE · R²</span>
+          <span class="k">Answers</span><span class="v">"How much?" · "How many?"</span>
+        </div>
+      </div>
+      <div class="bigcard reg">
+        <h3 style="color:#1d4ed8;font-size:1.2vw;margin:0 0 .6vh">When to use it</h3>
+        <ul class="feat">
+          <li><b>Price prediction</b> — house prices, stock value, product cost</li>
+          <li><b>Forecasting</b> — sales, demand, temperature, traffic</li>
+          <li><b>Risk / scores</b> — credit score, insurance premium</li>
+          <li><b>Relationships</b> — how dosage affects blood pressure</li>
+        </ul>
+        <p class="sub" style="margin-top:auto">Use regression whenever the <b>target is a number</b> and ordering/magnitude matters.</p>
+      </div>
+    </div>
+  </div>`});
+
+SLIDES.push({html:`
+  <div class="slide">
+    <div class="kicker"><span class="dot cls"></span> Concept 02</div>
+    <h1 style="color:#db2777">Classification</h1>
+    <div class="grid2" style="margin-top:1vh">
+      <div class="bigcard cls">
+        <h3 style="color:#be185d;font-size:1.2vw;margin:0 0 .6vh">Definition</h3>
+        <p class="lead">Classification predicts a <b>discrete category / label</b>. The model learns a
+        <b>decision boundary</b> separating classes, then assigns each new point to the region it lands in
+        (often with a probability).</p>
+        <div class="kv">
+          <span class="k">Output</span><span class="v">Class label (e.g. "spam" / "not spam")</span>
+          <span class="k">Measured by</span><span class="v">Accuracy · Precision · Recall · F1</span>
+          <span class="k">Answers</span><span class="v">"Which one?" · "Is it A or B?"</span>
+        </div>
+      </div>
+      <div class="bigcard cls">
+        <h3 style="color:#be185d;font-size:1.2vw;margin:0 0 .6vh">When to use it</h3>
+        <ul class="feat">
+          <li><b>Spam / fraud detection</b> — yes vs no</li>
+          <li><b>Medical diagnosis</b> — disease present or absent</li>
+          <li><b>Image / text tagging</b> — cat, dog, bird…</li>
+          <li><b>Churn / sentiment</b> — will leave? positive/negative?</li>
+        </ul>
+        <p class="sub" style="margin-top:auto">Use classification whenever the <b>target is a category</b>, not a magnitude.</p>
+      </div>
+    </div>
+  </div>`});
+
+/* ---------- helper to build an algorithm slide shell ---------- */
+function algoSlide({idx,fam,name,tagline,defn,when,measure,vizId,vizTitle,controls,legend}){
+  const famClass = fam==='reg'?'reg':'cls';
+  const famLabel = fam==='reg'?'Regression':'Classification';
+  return {vizId, html:`
+    <div class="slide">
+      <div class="kicker"><span class="dot ${famClass}"></span> ${famLabel} · Algorithm ${idx}</div>
+      <div class="cols">
+        <div class="left">
+          <h2>${name}</h2>
+          <p class="sub">${tagline}</p>
+          <div class="card"><h3>What it does</h3><p>${defn}</p></div>
+          <div class="card"><h3>When to use it</h3><ul class="feat">${when}</ul></div>
+          <div class="card"><h3>📏 How to measure it</h3><p>${measure}</p></div>
+        </div>
+        <div class="right">
+          <div class="viz">
+            <div class="viz-head">
+              <span class="viz-title">${vizTitle}</span>
+              <span class="viz-stats" id="${vizId}-stats"></span>
+            </div>
+            <div class="canvas-wrap"><canvas id="${vizId}"></canvas></div>
+            <div class="controls">${controls}
+              <div class="legend" style="margin-left:auto">${legend||''}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot">Interactive · click the plot to add data</div>
+    </div>`};
+}
+function rng(id,label,min,max,step,val){ return `<div class="ctrl"><label>${label} <b id="${id}-v">${val}</b></label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}"></div>`; }
+function regenBtn(id,fam){ return `<button class="btn ${fam}" id="${id}">↻ New data</button>`; }
+const LEG_REG = `<span><i style="background:#2563eb"></i>data</span><span><i style="background:#16a34a"></i>fit</span><span><i style="background:#dc2626"></i>error</span>`;
+const LEG_CLS = `<span><i style="background:#2563eb"></i>class A</span><span><i style="background:#f59e0b"></i>class B</span>`;
+
+/* ============================ REGRESSION SLIDES ============================ */
+
+SLIDES.push(algoSlide({idx:1,fam:'reg',name:'Linear Regression',
+  tagline:'The straight-line baseline — fits y = m·x + b by least squares.',
+  defn:'Finds the single straight line that minimizes the sum of squared vertical distances (residuals) between the line and every data point.',
+  when:'<li><b>Linear trends</b> — target rises/falls steadily with a feature</li><li>You need an <b>interpretable</b>, fast baseline</li><li>Few features, roughly linear relationship</li>',
+  measure:'The red dashes are <b>residuals</b> (errors). We square &amp; average them → <b>RMSE</b> (typical error size), average their absolute value → <b>MAE</b>, and compare to a flat mean → <b>R²</b> (1 = perfect). Toggle residuals to see what is being minimized.',
+  vizId:'v-linear', vizTitle:'Least-squares line + residual errors',
+  controls: `<button class="btn reg" id="v-linear-res">Toggle residuals</button>`+regenBtn('v-linear-gen','reg'), legend:LEG_REG}));
+
+SLIDES.push(algoSlide({idx:2,fam:'reg',name:'Polynomial Regression',
+  tagline:'Bends the line into a curve by adding x², x³, … terms.',
+  defn:'Extends linear regression with polynomial features so it can fit curved relationships. Degree controls flexibility.',
+  when:'<li>Relationship is <b>curved</b>, not straight</li><li>You still want a simple, closed-form model</li><li>Physics/growth curves, dose–response</li>',
+  measure:'Watch <b>RMSE</b> fall as degree rises — but that is <i>training</i> error. Past a point the curve wiggles through noise: training RMSE keeps dropping while the shape becomes unstable. That gap is <b>overfitting</b>.',
+  vizId:'v-poly', vizTitle:'Polynomial curve + training error',
+  controls: rng('v-poly-deg','Degree',1,9,1,3)+regenBtn('v-poly-gen','reg'), legend:LEG_REG}));
+
+SLIDES.push(algoSlide({idx:3,fam:'reg',name:'Decision Tree Regression',
+  tagline:'Splits the input into regions and predicts a constant in each.',
+  defn:'Recursively splits the feature range to reduce error, predicting the average target within each leaf region — producing a step function.',
+  when:'<li><b>Non-linear, non-smooth</b> patterns</li><li>Mixed feature types, no scaling needed</li><li>You want human-readable rules</li>',
+  measure:'Each split is chosen to cut the <b>sum of squared errors</b> the most. Increase depth and RMSE drops toward zero — the staircase eventually touches every point, the classic sign of a tree memorising the data.',
+  vizId:'v-tree', vizTitle:'Piecewise-constant fit + error',
+  controls: rng('v-tree-d','Max depth',1,7,1,3)+regenBtn('v-tree-gen','reg'), legend:LEG_REG}));
+
+SLIDES.push(algoSlide({idx:4,fam:'reg',name:'Random Forest Regression',
+  tagline:'Averages many decorrelated trees for a smoother, robust fit.',
+  defn:'Trains many trees on bootstrapped samples and averages them. Averaging cancels individual trees’ errors, reducing variance.',
+  when:'<li>You want tree power with <b>less overfitting</b></li><li>Strong general-purpose tabular baseline</li><li>Noisy data, non-linear structure</li>',
+  measure:'Compare the faint single tree to the bold average: adding trees lowers <b>variance</b>, so RMSE on new data stabilises. The residual dashes shrink and stop reacting to individual noisy points.',
+  vizId:'v-forest', vizTitle:'Tree ensemble + error',
+  controls: rng('v-forest-n','Trees',1,40,1,12)+rng('v-forest-d','Depth',1,6,1,4)+regenBtn('v-forest-gen','reg'), legend:LEG_REG}));
+
+SLIDES.push(algoSlide({idx:5,fam:'reg',name:'Support Vector Regression',
+  tagline:'Fits a tube of width ε — only points outside it are penalized.',
+  defn:'SVR fits a function so most points lie within a margin (“tube”) of width ±ε. Errors inside the tube are ignored; only violators matter.',
+  when:'<li>Robustness to <b>small noise</b> is desired</li><li>High-dimensional or non-linear (with kernels)</li><li>You care about a margin, not exact fit</li>',
+  measure:'Only points <b>outside</b> the ε-tube count as error (the ringed <b>support vectors</b>). Widen ε and both the support-vector count and the measured error fall — you are choosing how much noise to forgive.',
+  vizId:'v-svr', vizTitle:'ε-insensitive tube + support vectors',
+  controls: rng('v-svr-e','ε (tube)',0.2,3,0.1,1.2)+regenBtn('v-svr-gen','reg'),
+  legend:`<span><i style="background:#16a34a"></i>fit</span><span><i style="background:rgba(22,163,74,.22)"></i>ε-tube</span><span><i style="background:#dc2626"></i>violator</span>`}));
+
+SLIDES.push(algoSlide({idx:6,fam:'reg',name:'Ridge Regression',
+  tagline:'Linear regression + L2 penalty that shrinks coefficients.',
+  defn:'Adds λ·Σβ² to the loss. Large coefficients are penalized, so the fit stays smooth and stable — great against overfitting & multicollinearity.',
+  when:'<li>Many correlated features</li><li>Overfitting with plain linear/poly</li><li>You want <b>all</b> features kept, just shrunk</li>',
+  measure:'The inset bars are the <b>coefficients</b>. As α rises they shrink <b>smoothly toward — but never exactly — zero</b>, while training RMSE rises a little. You trade a bit of fit for a much simpler, more stable model.',
+  vizId:'v-ridge', vizTitle:'L2 shrinkage (degree-8) + coefficients',
+  controls: rng('v-ridge-a','α (log)',-4,4,0.2,-2)+regenBtn('v-ridge-gen','reg'), legend:LEG_REG}));
+
+SLIDES.push(algoSlide({idx:7,fam:'reg',name:'Lasso Regression',
+  tagline:'Linear regression + L1 penalty that zeroes out weak features.',
+  defn:'Adds λ·Σ|β|. The L1 penalty drives some coefficients exactly to zero — performing automatic feature selection and yielding a sparse model.',
+  when:'<li>Many features, few truly matter</li><li>You want <b>automatic feature selection</b></li><li>Interpretable, sparse models</li>',
+  measure:'Watch the <b>non-zero coefficient count</b> in the stats and the bars snapping to <b>exactly zero</b> one by one as α rises (unlike Ridge). That count is the model’s effective complexity — Lasso measures &amp; selects.',
+  vizId:'v-lasso', vizTitle:'L1 sparsity (degree-8) + coefficients',
+  controls: rng('v-lasso-a','α (log)',-4,2,0.2,-2)+regenBtn('v-lasso-gen','reg'), legend:LEG_REG}));
+
+/* ---- Regression evaluation metrics ---- */
+SLIDES.push({html:`
+  <div class="slide">
+    <div class="kicker"><span class="dot reg"></span> Evaluation · Regression</div>
+    <h1 style="color:#1d4ed8">Error metrics for regression</h1>
+    <p class="sub">Every regression model in this deck reports these live. Smaller error is better; R² closer to 1 is better. &nbsp;(yᵢ = true, ŷᵢ = predicted, ȳ = mean, n = samples)</p>
+    <div class="metric-grid">
+      <div class="card metric"><h3>MAE — Mean Absolute Error</h3><div class="formula">MAE = (1/n) · Σ |yᵢ − ŷᵢ|</div><p>Average error in the original units. Every mistake weighted equally, so it is <b>robust to outliers</b>.</p></div>
+      <div class="card metric"><h3>MSE — Mean Squared Error</h3><div class="formula">MSE = (1/n) · Σ (yᵢ − ŷᵢ)²</div><p>Squares the errors, so <b>large mistakes are punished hard</b>. Units are squared, harder to read directly.</p></div>
+      <div class="card metric"><h3>RMSE — Root Mean Squared Error</h3><div class="formula">RMSE = √MSE</div><p>Back in the original units — the <b>typical error size</b>. The most common headline metric.</p></div>
+      <div class="card metric"><h3>R² — Coefficient of Determination</h3><div class="formula">R² = 1 − Σ(yᵢ−ŷᵢ)² / Σ(yᵢ−ȳ)²</div><p><b>Fraction of variance explained.</b> 1 = perfect · 0 = no better than the mean · &lt;0 = worse than the mean.</p></div>
+      <div class="card metric"><h3>MAPE — Mean Absolute % Error</h3><div class="formula">MAPE = (100/n) · Σ |yᵢ − ŷᵢ| / |yᵢ|</div><p>Error as a <b>percentage</b> — easy to communicate, but explodes when true values are near zero.</p></div>
+      <div class="card metric"><h3>Which to use?</h3><p><b>RMSE</b> when big errors are costly · <b>MAE</b> when outliers shouldn't dominate · <b>R²</b> to report fit quality · <b>MAPE</b> for a business-friendly %.</p></div>
+    </div>
+  </div>`});
+
+/* ============================ CLASSIFICATION SLIDES ============================ */
+
+SLIDES.push(algoSlide({idx:1,fam:'cls',name:'Logistic Regression',
+  tagline:'A linear boundary squashed through a sigmoid into probabilities.',
+  defn:'Fits a straight decision boundary and passes the distance through a sigmoid to output class probabilities between 0 and 1.',
+  when:'<li><b>Linearly separable</b>-ish classes</li><li>You need calibrated <b>probabilities</b></li><li>Fast, interpretable baseline (spam, churn)</li>',
+  measure:'The live <b>confusion matrix</b> counts TP/FP/FN/TN against the true labels. <b>Accuracy</b> = correct / all, <b>Precision</b> = TP/(TP+FP) — of those flagged B, how many were right — and <b>Recall</b> = TP/(TP+FN) — of true B, how many we caught.',
+  vizId:'c-logistic', vizTitle:'Sigmoid boundary + live metrics',
+  controls: `<button class="btn cls" id="c-logistic-cls">Add class: A</button>`+regenBtn('c-logistic-gen','cls'), legend:LEG_CLS}));
+
+SLIDES.push(algoSlide({idx:2,fam:'cls',name:'Decision Tree Classifier',
+  tagline:'Carves the plane into axis-aligned rectangles by asking yes/no questions.',
+  defn:'Repeatedly splits on the feature/threshold that best separates classes (lowest Gini impurity), producing rectangular decision regions.',
+  when:'<li>Rules must be <b>explainable</b></li><li>Non-linear boundaries, mixed features</li><li>No feature scaling required</li>',
+  measure:'Increase depth: the confusion matrix diagonal (TP, TN) grows and accuracy climbs toward 100% — but that is training accuracy. When it hits 100% by isolating single points, precision/recall on new data would fall (overfitting).',
+  vizId:'c-tree', vizTitle:'Axis-aligned regions + live metrics',
+  controls: rng('c-tree-d','Max depth',1,8,1,4)+regenBtn('c-tree-gen','cls'), legend:LEG_CLS}));
+
+SLIDES.push(algoSlide({idx:3,fam:'cls',name:'Random Forest Classifier',
+  tagline:'Majority vote of many trees — smoother, sturdier boundaries.',
+  defn:'Combines many decision trees (each on a bootstrap sample) by majority vote. The ensemble smooths the blocky single-tree boundary and resists overfitting.',
+  when:'<li>Strong <b>out-of-the-box</b> tabular classifier</li><li>Non-linear, noisy data</li><li>You want accuracy over interpretability</li>',
+  measure:'Add trees and the confusion matrix steadies: accuracy stays high while the boundary stops chasing individual points. The shading gradient reflects <b>vote confidence</b> — the raw signal behind precision &amp; recall.',
+  vizId:'c-forest', vizTitle:'Ensemble vote + live metrics',
+  controls: rng('c-forest-n','Trees',1,30,1,12)+rng('c-forest-d','Depth',1,7,1,4)+regenBtn('c-forest-gen','cls'), legend:LEG_CLS}));
+
+SLIDES.push(algoSlide({idx:4,fam:'cls',name:'K-Nearest Neighbors (KNN)',
+  tagline:'No training — classify by the majority of the k closest points.',
+  defn:'For any point, look at its k nearest neighbors and take the majority class. A lazy, non-parametric method: the data IS the model.',
+  when:'<li>Irregular, non-linear boundaries</li><li>Small/medium datasets</li><li>Simple, intuitive baseline</li>',
+  measure:'Metrics here use <b>leave-one-out</b> — each point is classified by its neighbours <i>excluding itself</i>, the honest way to measure KNN. Tiny k → high accuracy but noisy; larger k smooths the boundary and changes precision/recall.',
+  vizId:'c-knn', vizTitle:'k-neighbor regions + LOO metrics',
+  controls: rng('c-knn-k','k',1,25,1,7)+regenBtn('c-knn-gen','cls'), legend:LEG_CLS}));
+
+SLIDES.push(algoSlide({idx:5,fam:'cls',name:'Support Vector Machine (SVM)',
+  tagline:'Maximum-margin boundary; kernels bend it for non-linear data.',
+  defn:'Finds the boundary with the widest margin to the nearest points (support vectors). With an RBF kernel it can carve curved, non-linear boundaries.',
+  when:'<li>Clear margin between classes</li><li>High-dimensional data (text)</li><li>Non-linear boundaries via <b>kernels</b></li>',
+  measure:'Switch Linear ↔ RBF and watch the confusion matrix. RBF usually lifts accuracy on the two-moons shape a linear boundary cannot separate. Ringed points sit near the margin — the support vectors that define the boundary.',
+  vizId:'c-svm', vizTitle:'Max-margin boundary + live metrics',
+  controls: `<div class="ctrl"><label>Kernel</label><select id="c-svm-k"><option value="lin">Linear</option><option value="rbf" selected>RBF</option></select></div>`+rng('c-svm-g','γ (RBF)',0.2,3,0.1,1.2)+regenBtn('c-svm-gen','cls'), legend:LEG_CLS}));
+
+SLIDES.push(algoSlide({idx:6,fam:'cls',name:'Naive Bayes',
+  tagline:'Probabilistic classifier assuming features are independent.',
+  defn:'Applies Bayes’ theorem assuming each feature contributes independently. Despite the “naive” assumption it’s fast and effective, especially for text.',
+  when:'<li><b>Text</b> — spam filters, sentiment, topic</li><li>High-dimensional, many features</li><li>Very fast training / tiny data</li>',
+  measure:'Each class is a Gaussian blob (contours = 1σ, 2σ). A point joins whichever class gives higher likelihood × prior. The confusion matrix shows how that probabilistic rule scores on accuracy, precision and recall.',
+  vizId:'c-nb', vizTitle:'Gaussian likelihood + live metrics',
+  controls: regenBtn('c-nb-gen','cls'), legend:LEG_CLS}));
+
+/* ---- Classification evaluation metrics ---- */
+SLIDES.push({html:`
+  <div class="slide">
+    <div class="kicker"><span class="dot cls"></span> Evaluation · Classification</div>
+    <h1 style="color:#db2777">Error metrics for classification</h1>
+    <div class="cols" style="grid-template-columns:40% 60%">
+      <div class="left">
+        <p class="sub">Everything starts from the <b>confusion matrix</b> — count the four outcomes, and every metric is a ratio of these cells. (positive = the class you care about)</p>
+        <table class="cm">
+          <tr><td class="hdr"></td><td class="hdr">Pred: Positive</td><td class="hdr">Pred: Negative</td></tr>
+          <tr><td class="hdr">Actual&nbsp;Pos</td><td class="tp">TP</td><td class="fn">FN</td></tr>
+          <tr><td class="hdr">Actual&nbsp;Neg</td><td class="fp">FP</td><td class="tn">TN</td></tr>
+        </table>
+        <p class="sub" style="margin-top:1.2vh"><b style="color:#15803d">TP / TN</b> = correct · <b style="color:#b91c1c">FP</b> = false alarm · <b style="color:#b91c1c">FN</b> = missed case.</p>
+      </div>
+      <div class="left" style="overflow:auto">
+        <div class="metric-grid" style="grid-template-columns:1fr 1fr;overflow:visible">
+          <div class="card metric"><h3>Accuracy</h3><div class="formula">(TP + TN) / (TP+TN+FP+FN)</div><p>Overall correctness. <b>Misleading on imbalanced data.</b></p></div>
+          <div class="card metric"><h3>Precision</h3><div class="formula">TP / (TP + FP)</div><p>Of those flagged positive, how many were right. Matters when <b>false alarms are costly</b>.</p></div>
+          <div class="card metric"><h3>Recall (Sensitivity)</h3><div class="formula">TP / (TP + FN)</div><p>Of true positives, how many caught. Matters when <b>misses are costly</b> — a missed cancer.</p></div>
+          <div class="card metric"><h3>Specificity</h3><div class="formula">TN / (TN + FP)</div><p>Of true negatives, how many correctly cleared.</p></div>
+          <div class="card metric"><h3>F1 Score</h3><div class="formula">2 · (P · R) / (P + R)</div><p><b>Harmonic mean</b> of precision &amp; recall — one balanced number.</p></div>
+          <div class="card metric"><h3>ROC · AUC</h3><div class="formula">area under the TPR–FPR curve</div><p>Threshold-free ranking quality. <b>1 = perfect · 0.5 = random.</b></p></div>
+        </div>
+      </div>
+    </div>
+  </div>`});
+
+SLIDES.push({html:`
+  <div class="slide">
+    <div class="kicker"><span class="dot reg"></span><span class="dot cls"></span> Wrap-up</div>
+    <h1>Choosing &amp; measuring</h1>
+    <div class="grid2" style="margin-top:1vh">
+      <div class="bigcard reg">
+        <h2 style="color:#1d4ed8;font-size:1.6vw">Regression → predict a number</h2>
+        <ul class="feat">
+          <li><b>Linear / Ridge / Lasso</b> — linear; Ridge shrinks, Lasso selects</li>
+          <li><b>Polynomial</b> — smooth curves, watch overfitting</li>
+          <li><b>Decision Tree</b> — non-linear steps, explainable</li>
+          <li><b>Random Forest</b> — robust go-to for tabular data</li>
+          <li><b>SVR</b> — margin-based, robust to small noise</li>
+        </ul>
+        <p class="sub" style="margin-top:auto">Measure with <b>RMSE / MAE / R²</b> on held-out data.</p>
+      </div>
+      <div class="bigcard cls">
+        <h2 style="color:#be185d;font-size:1.6vw">Classification → predict a label</h2>
+        <ul class="feat">
+          <li><b>Logistic Regression</b> — linear, probabilistic baseline</li>
+          <li><b>Decision Tree</b> — explainable rules</li>
+          <li><b>Random Forest</b> — strong accurate default</li>
+          <li><b>KNN</b> — simple, local, no training</li>
+          <li><b>SVM</b> — max-margin, kernels for non-linear</li>
+          <li><b>Naive Bayes</b> — fast, great for text</li>
+        </ul>
+        <p class="sub" style="margin-top:auto">Measure with the <b>confusion matrix → Accuracy / Precision / Recall / F1</b>.</p>
+      </div>
+    </div>
+    <p class="sub" style="text-align:center;margin-top:1.6vh">Start simple &amp; interpretable · add complexity only when it earns its keep · always validate on held-out data.</p>
+  </div>`});
+
+/* =========================================================================
+   Render slides into the stage
+   ========================================================================= */
+const stage=document.getElementById('stage');
+SLIDES.forEach((s,i)=>{ const d=document.createElement('div'); d.innerHTML=s.html.trim(); const el=d.firstChild; el.dataset.i=i; stage.appendChild(el); s.el=el; });
+const slideEls=[...stage.querySelectorAll('.slide')];
+
+const dots=document.getElementById('dots');
+SLIDES.forEach((_,i)=>{ const b=document.createElement('i'); b.onclick=()=>go(i); dots.appendChild(b); });
+const dotEls=[...dots.children];
+
+let cur=0;
+function go(n){
+  n=clamp(n,0,SLIDES.length-1);
+  slideEls.forEach((el,i)=>{ el.classList.toggle('active',i===n); el.classList.toggle('prev',i<n); });
+  dotEls.forEach((d,i)=>d.classList.toggle('on',i===n));
+  document.getElementById('counter').textContent=`${n+1} / ${SLIDES.length}`;
+  document.getElementById('progress').style.width=`${(n+1)/SLIDES.length*100}%`;
+  cur=n;
+  const vizId=SLIDES[n].vizId;
+  if(vizId) requestAnimationFrame(()=>initViz[vizId] && initViz[vizId]());
+}
+document.getElementById('next').onclick=()=>go(cur+1);
+document.getElementById('prev').onclick=()=>go(cur-1);
+window.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();go(cur+1);}
+  else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();go(cur-1);}
+  else if(e.key==='Home')go(0);
+  else if(e.key==='End')go(SLIDES.length-1);
+  else if(e.key==='f'||e.key==='F'){ if(!document.fullscreenElement)document.documentElement.requestFullscreen(); else document.exitFullscreen(); }
+});
+window.addEventListener('resize',()=>{ const vizId=SLIDES[cur].vizId; if(vizId&&initViz[vizId])initViz[vizId](); });
+
+/* =========================================================================
+   VISUALIZERS
+   ========================================================================= */
+const initViz={};
+function C(id){ return document.getElementById(id); }
+function setStat(id,txt){ const e=C(id+'-stats'); if(e)e.innerHTML=txt; }
+function onClickAdd(plot, cb){
+  plot.c.onclick=e=>{ const r=plot.c.getBoundingClientRect(); const x=plot.ix(e.clientX-r.left), y=plot.iy(e.clientY-r.top); cb(x,y); };
+}
+
+/* ---------- 1. Linear ---------- */
+(()=>{ let data=genRegression('linear'); let showRes=true;
+  initViz['v-linear']=()=>{
+    const cv=C('v-linear'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      P.clear(); P.grid();
+      const {xs,ys}=data; const mx=mean(xs),my=mean(ys);
+      let sxy=0,sxx=0; for(let i=0;i<xs.length;i++){sxy+=(xs[i]-mx)*(ys[i]-my);sxx+=(xs[i]-mx)**2;}
+      const m=sxy/sxx, b=my-m*mx; const f=x=>m*x+b;
+      if(showRes) drawResiduals(P,xs,ys,f);
+      P.line(f,CLR.fit,3);
+      for(let i=0;i<xs.length;i++)P.dot(xs[i],ys[i],CLR.a);
+      const M=regMetrics(xs,ys,f);
+      setStat('v-linear',`y = <b>${m.toFixed(2)}</b>x + <b>${b.toFixed(2)}</b> · MSE <b>${M.mse.toFixed(2)}</b> · RMSE <b>${M.rmse.toFixed(2)}</b> · MAE <b>${M.mae.toFixed(2)}</b> · R² <b>${M.r2.toFixed(3)}</b>`);
+    };
+    C('v-linear-gen').onclick=()=>{data=genRegression('linear');draw();};
+    C('v-linear-res').onclick=()=>{showRes=!showRes;draw();};
+    onClickAdd(P,(x,y)=>{ if(x>0&&x<10&&y>0&&y<11){data.xs.push(x);data.ys.push(y);draw();} });
+    draw();
+  };
+})();
+
+/* ---------- 2. Polynomial ---------- */
+(()=>{ let data=genRegression('wave');
+  initViz['v-poly']=()=>{
+    const cv=C('v-poly'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const deg=+C('v-poly-deg').value; C('v-poly-deg-v').textContent=deg;
+      P.clear(); P.grid();
+      const c=polyfit(data.xs,data.ys,deg,1e-6); const f=x=>polyval(c,x);
+      drawResiduals(P,data.xs,data.ys,f);
+      P.line(f,CLR.fit,3);
+      for(let i=0;i<data.xs.length;i++)P.dot(data.xs[i],data.ys[i],CLR.a);
+      regStat('v-poly',data.xs,data.ys,f,`degree ${deg}`+(deg>=6?' · <span style="color:#d97706">overfitting?</span>':''));
+    };
+    C('v-poly-deg').oninput=draw; C('v-poly-gen').onclick=()=>{data=genRegression('wave');draw();};
+    onClickAdd(P,(x,y)=>{if(x>0&&x<10&&y>0&&y<11){data.xs.push(x);data.ys.push(y);draw();}});
+    draw();
+  };
+})();
+
+/* ---------- 3. Decision Tree Regression ---------- */
+(()=>{ let data=genRegression('wave');
+  initViz['v-tree']=()=>{
+    const cv=C('v-tree'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const d=+C('v-tree-d').value; C('v-tree-d-v').textContent=d;
+      P.clear(); P.grid();
+      const tree=buildTree1D(data.xs,data.ys,d); const f=x=>predTree1D(tree,x);
+      drawResiduals(P,data.xs,data.ys,f);
+      P.line(f,CLR.fit,3,400);
+      for(let i=0;i<data.xs.length;i++)P.dot(data.xs[i],data.ys[i],CLR.a);
+      regStat('v-tree',data.xs,data.ys,f,`depth ${d}`);
+    };
+    C('v-tree-d').oninput=draw; C('v-tree-gen').onclick=()=>{data=genRegression('wave');draw();};
+    onClickAdd(P,(x,y)=>{if(x>0&&x<10&&y>0&&y<11){data.xs.push(x);data.ys.push(y);draw();}});
+    draw();
+  };
+})();
+
+/* ---------- 4. Random Forest Regression ---------- */
+(()=>{ let data=genRegression('wave');
+  initViz['v-forest']=()=>{
+    const cv=C('v-forest'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const n=+C('v-forest-n').value, d=+C('v-forest-d').value;
+      C('v-forest-n-v').textContent=n; C('v-forest-d-v').textContent=d;
+      P.clear(); P.grid();
+      const N=data.xs.length; const trees=[];
+      for(let t=0;t<n;t++){ const bx=[],by=[]; for(let i=0;i<N;i++){const j=Math.floor(rnd()*N);bx.push(data.xs[j]);by.push(data.ys[j]);} trees.push(buildTree1D(bx,by,d)); }
+      if(trees[0])P.line(x=>predTree1D(trees[0],x),'rgba(22,163,74,.28)',1.5,400);
+      const F=x=>{let s=0;for(const t of trees)s+=predTree1D(t,x);return s/trees.length;};
+      drawResiduals(P,data.xs,data.ys,F);
+      P.line(F,CLR.fit,3.2,400);
+      for(let i=0;i<data.xs.length;i++)P.dot(data.xs[i],data.ys[i],CLR.a);
+      regStat('v-forest',data.xs,data.ys,F,`${n} trees · depth ${d}`);
+    };
+    C('v-forest-n').oninput=draw; C('v-forest-d').oninput=draw; C('v-forest-gen').onclick=()=>{data=genRegression('wave');draw();};
+    onClickAdd(P,(x,y)=>{if(x>0&&x<10&&y>0&&y<11){data.xs.push(x);data.ys.push(y);draw();}});
+    draw();
+  };
+})();
+
+/* ---------- 5. SVR ---------- */
+(()=>{ let data=genRegression('linear');
+  initViz['v-svr']=()=>{
+    const cv=C('v-svr'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const eps=+C('v-svr-e').value; C('v-svr-e-v').textContent=eps.toFixed(1);
+      P.clear(); P.grid();
+      const xs=data.xs,ys=data.ys,mx=mean(xs),my=mean(ys); let sxy=0,sxx=0;
+      for(let i=0;i<xs.length;i++){sxy+=(xs[i]-mx)*(ys[i]-my);sxx+=(xs[i]-mx)**2;}
+      const m=sxy/sxx,b=my-m*mx,f=x=>m*x+b;
+      P.band(x=>f(x)-eps,x=>f(x)+eps,'rgba(22,163,74,.14)');
+      P.line(x=>f(x)+eps,'rgba(22,163,74,.5)',1.2); P.line(x=>f(x)-eps,'rgba(22,163,74,.5)',1.2);
+      P.line(f,CLR.fit,3);
+      let sv=0;
+      for(let i=0;i<xs.length;i++){ const out=Math.abs(ys[i]-f(xs[i]))>eps; if(out)sv++;
+        P.dot(xs[i],ys[i],out?'#dc2626':CLR.a); if(out){P.ctx.beginPath();P.ctx.arc(P.px(xs[i]),P.py(ys[i]),8,0,7);P.ctx.strokeStyle='#dc2626';P.ctx.lineWidth=1.5;P.ctx.stroke();} }
+      const M=regMetrics(xs,ys,f);
+      setStat('v-svr',`ε = <b>${eps.toFixed(1)}</b> · support vectors <b>${sv}</b>/${xs.length} · RMSE <b>${M.rmse.toFixed(2)}</b>`);
+    };
+    C('v-svr-e').oninput=draw; C('v-svr-gen').onclick=()=>{data=genRegression('linear');draw();};
+    onClickAdd(P,(x,y)=>{if(x>0&&x<10&&y>0&&y<11){data.xs.push(x);data.ys.push(y);draw();}});
+    draw();
+  };
+})();
+
+/* ---------- 6/7. Ridge & Lasso ---------- */
+function coordDescentLasso(X, y, lambda, iters=250){
+  const n=X.length, p=X[0].length; let w=new Array(p).fill(0);
+  const col2=new Array(p).fill(0); for(let j=0;j<p;j++)for(let i=0;i<n;i++)col2[j]+=X[i][j]**2;
+  for(let it=0;it<iters;it++){
+    for(let j=0;j<p;j++){
+      let rho=0; for(let i=0;i<n;i++){ let pred=0; for(let k=0;k<p;k++) if(k!==j) pred+=w[k]*X[i][k]; rho+=X[i][j]*(y[i]-pred); }
+      if(col2[j]<1e-9){w[j]=0;continue;}
+      if(j===0){ w[j]=rho/col2[j]; }
+      else{ w[j]=Math.sign(rho)*Math.max(0,Math.abs(rho)-lambda)/col2[j]; }
+    }
+  }
+  return w;
+}
+function ridgeFit(X,y,lambda){
+  const n=X.length,p=X[0].length; const A=Array.from({length:p},()=>new Array(p).fill(0)); const bb=new Array(p).fill(0);
+  for(let i=0;i<n;i++)for(let r=0;r<p;r++){bb[r]+=X[i][r]*y[i];for(let c=0;c<p;c++)A[r][c]+=X[i][r]*X[i][c];}
+  for(let k=1;k<p;k++)A[k][k]+=lambda;
+  return solve(A,bb);
+}
+function makeRegVisualizer(id, isLasso){
+  let data=genRegression('wave'); const DEG=8;
+  initViz[id]=()=>{
+    const cv=C(id); if(!cv)return; const P=new Plot(cv); P.resize();
+    function features(){
+      const xs=data.xs, means=[],stds=[];
+      const raw=xs.map(x=>{const r=[1];for(let k=1;k<=DEG;k++)r.push(Math.pow((x-5)/3,k));return r;});
+      for(let j=0;j<=DEG;j++){ const col=raw.map(r=>r[j]); const mu=j===0?0:mean(col); let sd=1; if(j!==0){sd=Math.sqrt(mean(col.map(v=>(v-mu)**2)))||1;} means.push(mu);stds.push(sd);}
+      const X=raw.map(r=>r.map((v,j)=>j===0?1:(v-means[j])/stds[j]));
+      return {X,means,stds};
+    }
+    const draw=()=>{
+      const aExp=+C(id+'-a').value; C(id+'-a-v').textContent=aExp.toFixed(1);
+      const lambda=Math.pow(10,aExp);
+      P.clear(); P.grid();
+      const {X,means,stds}=features();
+      const w = isLasso? coordDescentLasso(X,data.ys,lambda) : ridgeFit(X,data.ys,lambda);
+      const predStd=x=>{ let r=[1]; for(let k=1;k<=DEG;k++)r.push(((Math.pow((x-5)/3,k))-means[k])/stds[k]); let s=0; for(let j=0;j<=DEG;j++)s+=w[j]*r[j]; return s; };
+      drawResiduals(P,data.xs,data.ys,predStd);
+      P.line(predStd,CLR.fit,3);
+      for(let i=0;i<data.xs.length;i++)P.dot(data.xs[i],data.ys[i],CLR.a);
+      // coefficient bars inset
+      const g=P.ctx; const bx=P.w-P.pad.r-150, by=P.pad.t+6, bw=140, bh=64;
+      g.save(); g.fillStyle='rgba(255,255,255,.95)'; g.strokeStyle='#d1d5db'; g.lineWidth=1;
+      g.fillRect(bx-8,by-4,bw+14,bh+24); g.strokeRect(bx-8,by-4,bw+14,bh+24);
+      g.fillStyle='#6b7280'; g.font='10px system-ui'; g.fillText('coefficients β₁…β₈',bx,by+8);
+      const maxc=Math.max(0.01,...w.slice(1).map(Math.abs));
+      const bwid=bw/DEG; let nz=0;
+      for(let j=1;j<=DEG;j++){ const h=Math.abs(w[j])/maxc*bh; if(Math.abs(w[j])>1e-4)nz++;
+        g.fillStyle= Math.abs(w[j])<1e-4?'#cbd5e1': (w[j]>0?'#16a34a':'#dc2626');
+        g.fillRect(bx+(j-1)*bwid+1, by+18+(bh-h), bwid-2, h);
+      }
+      g.restore();
+      const M=regMetrics(data.xs,data.ys,predStd);
+      setStat(id,`α = <b>${lambda.toExponential(1)}</b> · non-zero coefs <b>${nz}</b>/8 · RMSE <b>${M.rmse.toFixed(2)}</b>`);
+    };
+    C(id+'-a').oninput=draw; C(id+'-gen').onclick=()=>{data=genRegression('wave');draw();};
+    onClickAdd(P,(x,y)=>{if(x>0&&x<10&&y>0&&y<11){data.xs.push(x);data.ys.push(y);draw();}});
+    draw();
+  };
+}
+makeRegVisualizer('v-ridge',false);
+makeRegVisualizer('v-lasso',true);
+
+/* ============================ CLASSIFIERS ============================ */
+function fitLogistic(pts, iters=400, lr=0.35){
+  const mx=mean(pts.map(p=>p.x)), my=mean(pts.map(p=>p.y));
+  let w0=0,w1=0,w2=0;
+  for(let it=0;it<iters;it++){
+    let g0=0,g1=0,g2=0;
+    for(const p of pts){ const z=w0+w1*(p.x-mx)+w2*(p.y-my); const s=1/(1+Math.exp(-z)); const e=s-p.c; g0+=e;g1+=e*(p.x-mx);g2+=e*(p.y-my); }
+    const n=pts.length; w0-=lr*g0/n; w1-=lr*g1/n; w2-=lr*g2/n;
+  }
+  return (x,y)=>1/(1+Math.exp(-(w0+w1*(x-mx)+w2*(y-my))));
+}
+(()=>{ let pts=genClusters(80); let addCls=0;
+  initViz['c-logistic']=()=>{
+    const cv=C('c-logistic'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const prob=fitLogistic(pts); P.clear(); shade(P,prob); P.grid(); drawPoints(P,pts);
+      const m=confusion(pts,(x,y)=>prob(x,y)>0.5?1:0);       metricStat('c-logistic','linear boundary',m);
+    };
+    const btn=C('c-logistic-cls'); btn.onclick=()=>{addCls=1-addCls;btn.textContent='Add class: '+(addCls?'B':'A');};
+    C('c-logistic-gen').onclick=()=>{pts=genClusters(80);draw();};
+    onClickAdd(P,(x,y)=>{if(x>0.1&&x<9.9&&y>0.1&&y<9.9){pts.push({x,y,c:addCls});draw();}});
+    draw();
+  };
+})();
+
+(()=>{ let pts=genMoons(110);
+  initViz['c-tree']=()=>{
+    const cv=C('c-tree'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const d=+C('c-tree-d').value; C('c-tree-d-v').textContent=d;
+      const tree=buildTree2D(pts,d); const pred=(x,y)=>predTree2D(tree,x,y);
+      P.clear(); shade(P,pred,60); P.grid(); drawPoints(P,pts);
+      const m=confusion(pts,pred);       metricStat('c-tree',`depth ${d}`,m);
+    };
+    C('c-tree-d').oninput=draw; C('c-tree-gen').onclick=()=>{pts=genMoons(110);draw();};
+    onClickAdd(P,(x,y)=>{if(x>0.1&&x<9.9&&y>0.1&&y<9.9){pts.push({x,y,c:pts.length%2});draw();}});
+    draw();
+  };
+})();
+
+(()=>{ let pts=genMoons(110);
+  initViz['c-forest']=()=>{
+    const cv=C('c-forest'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const n=+C('c-forest-n').value, d=+C('c-forest-d').value;
+      C('c-forest-n-v').textContent=n; C('c-forest-d-v').textContent=d;
+      const N=pts.length; const trees=[];
+      for(let t=0;t<n;t++){ const bs=[]; for(let i=0;i<N;i++)bs.push(pts[Math.floor(rnd()*N)]); trees.push(buildTree2D(bs,d)); }
+      const prob=(x,y)=>{let s=0;for(const t of trees)s+=predTree2D(t,x,y);return s/trees.length;};
+      P.clear(); shade(P,prob,58); P.grid(); drawPoints(P,pts);
+      const m=confusion(pts,(x,y)=>prob(x,y)>0.5?1:0);       metricStat('c-forest',`${n} trees · depth ${d}`,m);
+    };
+    C('c-forest-n').oninput=draw; C('c-forest-d').oninput=draw; C('c-forest-gen').onclick=()=>{pts=genMoons(110);draw();};
+    onClickAdd(P,(x,y)=>{if(x>0.1&&x<9.9&&y>0.1&&y<9.9){pts.push({x,y,c:pts.length%2});draw();}});
+    draw();
+  };
+})();
+
+(()=>{ let pts=genMoons(90);
+  initViz['c-knn']=()=>{
+    const cv=C('c-knn'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const k=+C('c-knn-k').value; C('c-knn-k-v').textContent=k;
+      const prob=(x,y)=>{ const ds=pts.map(p=>({d:(p.x-x)**2+(p.y-y)**2,c:p.c})).sort((a,b)=>a.d-b.d).slice(0,Math.min(k,pts.length));
+        let s=0; for(const o of ds)s+=o.c; return s/ds.length; };
+      P.clear(); shade(P,prob,52); P.grid(); drawPoints(P,pts);
+      // leave-one-out confusion
+      let TP=0,FP=0,FN=0,TN=0;
+      for(let i=0;i<pts.length;i++){ const q=pts[i];
+        const ds=pts.filter((_,j)=>j!==i).map(p=>({d:(p.x-q.x)**2+(p.y-q.y)**2,c:p.c})).sort((a,b)=>a.d-b.d).slice(0,k);
+        let s=0;for(const o of ds)s+=o.c; const pr=(s/ds.length>0.5?1:0);
+        if(q.c===1){pr===1?TP++:FN++;}else{pr===1?FP++:TN++;} }
+      const N=pts.length; const m={TP,FP,FN,TN,acc:(TP+TN)/N,prec:TP/(TP+FP||1),rec:TP/(TP+FN||1)};
+      metricStat('c-knn',`k=${k} · LOO`,m);
+    };
+    C('c-knn-k').oninput=draw; C('c-knn-gen').onclick=()=>{pts=genMoons(90);draw();};
+    onClickAdd(P,(x,y)=>{if(x>0.1&&x<9.9&&y>0.1&&y<9.9){pts.push({x,y,c:pts.length%2});draw();}});
+    draw();
+  };
+})();
+
+(()=>{ let pts=genMoons(100);
+  initViz['c-svm']=()=>{
+    const cv=C('c-svm'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const kernel=C('c-svm-k').value; const gamma=+C('c-svm-g').value; C('c-svm-g-v').textContent=gamma.toFixed(1);
+      let prob, decision;
+      if(kernel==='lin'){
+        const mx=mean(pts.map(p=>p.x)),my=mean(pts.map(p=>p.y));
+        let w1=0,w2=0,b=0; const lr=0.02;
+        for(let it=0;it<300;it++){ for(const p of pts){ const yi=p.c===1?1:-1; const mrg=yi*(w1*(p.x-mx)+w2*(p.y-my)+b);
+          if(mrg<1){w1+=lr*(yi*(p.x-mx)-2*0.01*w1);w2+=lr*(yi*(p.y-my)-2*0.01*w2);b+=lr*yi;} else {w1-=lr*2*0.01*w1;w2-=lr*2*0.01*w2;} } }
+        decision=(x,y)=>w1*(x-mx)+w2*(y-my)+b; prob=(x,y)=>1/(1+Math.exp(-2*decision(x,y)));
+      } else {
+        decision=(x,y)=>{ let s=0; for(const p of pts){ const w=Math.exp(-gamma*((p.x-x)**2+(p.y-y)**2)); s+=(p.c===1?1:-1)*w; } return s; };
+        prob=(x,y)=>1/(1+Math.exp(-3*decision(x,y)));
+      }
+      P.clear(); shade(P,prob,60); P.grid(); drawPoints(P,pts);
+      for(const p of pts){ if(Math.abs(prob(p.x,p.y)-0.5)<0.28){P.ctx.beginPath();P.ctx.arc(P.px(p.x),P.py(p.y),8,0,7);P.ctx.strokeStyle='#111827';P.ctx.lineWidth=1.4;P.ctx.stroke();} }
+      const m=confusion(pts,(x,y)=>decision(x,y)>0?1:0);       metricStat('c-svm',kernel==='lin'?'linear':('RBF γ='+gamma.toFixed(1)),m);
+    };
+    C('c-svm-k').onchange=draw; C('c-svm-g').oninput=draw; C('c-svm-gen').onclick=()=>{pts=genMoons(100);draw();};
+    onClickAdd(P,(x,y)=>{if(x>0.1&&x<9.9&&y>0.1&&y<9.9){pts.push({x,y,c:pts.length%2});draw();}});
+    draw();
+  };
+})();
+
+(()=>{ let pts=genClusters(90,1.1);
+  initViz['c-nb']=()=>{
+    const cv=C('c-nb'); if(!cv)return; const P=new Plot(cv); P.resize();
+    const draw=()=>{
+      const stats={};
+      for(const cl of [0,1]){ const g=pts.filter(p=>p.c===cl); const mx=mean(g.map(p=>p.x)),my=mean(g.map(p=>p.y));
+        const vx=mean(g.map(p=>(p.x-mx)**2))||1, vy=mean(g.map(p=>(p.y-my)**2))||1;
+        stats[cl]={mx,my,vx,vy,prior:g.length/pts.length}; }
+      const logL=(x,y,cl)=>{const s=stats[cl];return Math.log(s.prior)-0.5*(Math.log(s.vx)+Math.log(s.vy))-((x-s.mx)**2/(2*s.vx)+(y-s.my)**2/(2*s.vy));};
+      const prob=(x,y)=>{const l0=logL(x,y,0),l1=logL(x,y,1);return 1/(1+Math.exp(l0-l1));};
+      P.clear(); shade(P,prob,58); P.grid();
+      const gc=P.ctx; gc.save();
+      for(const cl of [0,1]){ const s=stats[cl]; gc.strokeStyle=cl===0?'rgba(37,99,235,.7)':'rgba(245,158,11,.8)'; gc.lineWidth=1.4;
+        for(const k of [1,2]){ gc.beginPath(); for(let a=0;a<=64;a++){const t=a/64*2*Math.PI;const x=s.mx+k*Math.sqrt(s.vx)*Math.cos(t),y=s.my+k*Math.sqrt(s.vy)*Math.sin(t); if(a===0)gc.moveTo(P.px(x),P.py(y));else gc.lineTo(P.px(x),P.py(y));} gc.stroke(); } }
+      gc.restore();
+      drawPoints(P,pts);
+      const m=confusion(pts,(x,y)=>prob(x,y)>0.5?1:0);       metricStat('c-nb','Gaussian NB',m);
+    };
+    C('c-nb-gen').onclick=()=>{pts=genClusters(90,1.1);draw();};
+    onClickAdd(P,(x,y)=>{if(x>0.1&&x<9.9&&y>0.1&&y<9.9){pts.push({x,y,c:pts.length%2});draw();}});
+    draw();
+  };
+})();
+
+/* ---- boot ---- */
+go(0);
+</script>
+</body>
+</html>
